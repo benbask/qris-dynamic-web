@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Konverter QRIS Statis → Dinamis</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<style>
+  :root{--bg:#f4f6f8;--card:#fff;--ink:#1f2937;--muted:#6b7280;--line:#e5e7eb;--brand:#0f766e;--bad:#b91c1c}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:var(--bg);color:var(--ink);padding:24px}
+  .wrap{max-width:820px;margin:auto}
+  h1{font-size:22px;margin:0 0 4px}
+  p.sub{color:var(--muted);margin:0 0 20px;font-size:14px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:20px;margin-bottom:16px;box-shadow:0 1px 2px rgba(0,0,0,.04)}
+  label{display:block;font-weight:600;font-size:14px;margin-bottom:6px}
+  textarea,input[type=text]{width:100%;border:1px solid var(--line);border-radius:8px;padding:10px 12px;font-family:ui-monospace,Menlo,Consolas,monospace;font-size:13px;background:#fff}
+  textarea{min-height:90px;resize:vertical}
+  .row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+  .row>div{flex:1;min-width:180px}
+  .btn{border:0;border-radius:8px;padding:10px 16px;font-weight:600;font-size:14px;cursor:pointer;background:var(--brand);color:#fff}
+  .btn.sec{background:#e5e7eb;color:var(--ink)}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .msg{font-size:13px;margin-top:10px;padding:8px 10px;border-radius:8px;display:none}
+  .msg.ok{display:block;background:#ecfdf5;color:#065f46}
+  .msg.err{display:block;background:#fef2f2;color:var(--bad)}
+  .out{display:flex;gap:20px;flex-wrap:wrap;align-items:center}
+  #qr{background:#fff;padding:10px;border:1px solid var(--line);border-radius:10px;min-width:132px;min-height:132px}
+  .payload{flex:1;min-width:240px}
+  .payload code{display:block;background:#f9fafb;border:1px solid var(--line);border-radius:8px;padding:10px;font-size:12px;word-break:break-all;max-height:120px;overflow:auto}
+  table{border-collapse:collapse;width:100%;font-size:13px;margin-top:14px}
+  th,td{text-align:left;border-bottom:1px solid var(--line);padding:6px 8px}
+  th{color:var(--muted);font-weight:600}
+  td.tag{font-family:monospace;width:70px}
+  .note{font-size:12px;color:var(--muted);line-height:1.6}
+  .file{font-size:13px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Konverter QRIS Statis → Dinamis</h1>
+  <p class="sub">Mengubah metode inisiasi (tag 01) menjadi <b>12</b>, menambahkan nominal (tag 54), lalu menghitung ulang CRC (tag 63).</p>
+
+  <div class="card">
+    <label for="static">1. Payload QRIS statis</label>
+    <textarea id="static" placeholder="Tempel string QRIS, mis. 000201010211..."></textarea>
+    <div class="row" style="margin-top:10px">
+      <div><span class="file">Atau unggah gambar QR:</span><br><input type="file" id="file" accept="image/*"></div>
+      <div style="flex:none"><button class="btn sec" id="btnParse">Cek / Parsing</button></div>
+    </div>
+    <div class="msg" id="msg"></div>
+    <table id="tlvTable" style="display:none">
+      <thead><tr><th>Tag</th><th>Panjang</th><th>Nilai</th><th>Keterangan</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <div class="row">
+      <div>
+        <label for="amount">2. Nominal dasar (Rp)</label>
+        <input type="text" id="amount" placeholder="mis. 25000" inputmode="numeric">
+      </div>
+      <div style="max-width:150px">
+        <label for="code">Kode unik (3 digit)</label>
+        <input type="text" id="code" placeholder="mis. 735" inputmode="numeric" maxlength="3">
+      </div>
+      <div style="flex:none"><button class="btn sec" id="btnCode" title="Buat kode acak 3 digit">Acak</button></div>
+      <div style="flex:none"><button class="btn" id="btnConvert">Buat QRIS Dinamis</button></div>
+    </div>
+    <div class="msg ok" id="totalInfo" style="display:none"></div>
+  </div>
+
+  <div class="card" id="resultCard" style="display:none">
+    <h2 style="font-size:16px;margin:0 0 12px">3. Hasil</h2>
+    <div class="out">
+      <div id="qr"></div>
+      <div class="payload">
+        <label>Payload dinamis</label>
+        <code id="outPayload"></code>
+        <button class="btn sec" id="btnCopy" style="margin-top:10px">Salin payload</button>
+      </div>
+    </div>
+  </div>
+
+  <p class="note">
+    Catatan: CRC dihitung dengan CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF) sesuai spesifikasi QRIS.<br>
+    Payload yang dihasilkan tetap harus diproses oleh acquirer/merchant. Tidak semua penerima QRIS menerima QR dinamis buatan pihak ketiga — pastikan sistem kasir/merchant Anda mendukungnya. Alat ini hanya memformat data, bukan menjamin transaksi berhasil.
+  </p>
+</div>
+
+<script>
+/* ============================================================
+   KONFIGURASI MERCHANT
+   Isi MERCHANT_QRIS dengan payload QRIS statis merchant.
+   (Kosongkan jika ingin paste/upload QRIS manual setiap kali.)
+   ============================================================ */
+const CONFIG = {
+  MERCHANT_QRIS: '',   // <-- tempel payload QRIS statis di sini nanti
+  MERCHANT_NAME: ''    // <-- nama merchant untuk ditampilkan (opsional)
+};
+
+const TAG_INFO = {
+  '00':'Payload Format Indicator','01':'Point of Initiation Method','02':'Merchant Account Information',
+  '51':'Merchant Account Information (alternatif)','52':'Merchant Category Code','53':'Transaction Currency',
+  '54':'Transaction Amount','55':'Tip Indicator','58':'Country Code','59':'Merchant Name','60':'Merchant City',
+  '61':'Postal Code','62':'Additional Data','63':'CRC'
+};
+
+function parseTLV(s){
+  const out=[]; let i=0;
+  while(i+4<=s.length){
+    const tag=s.slice(i,i+2);
+    const len=parseInt(s.slice(i+2,i+4),10);
+    if(isNaN(len)||i+4+len>s.length) throw new Error('Payload TLV rusak pada tag '+tag+' di posisi '+i);
+    out.push({tag,len,val:s.slice(i+4,i+4+len)});
+    i+=4+len;
+  }
+  if(i!==s.length) throw new Error('Sisa karakter tidak terbaca di posisi '+i);
+  return out;
+}
+
+function buildTLV(items){
+  return items.map(x=>x.tag+String(x.val.length).padStart(2,'0')+x.val).join('');
+}
+
+function crc16ccitt(str){
+  let crc=0xFFFF;
+  for(let i=0;i<str.length;i++){
+    crc ^= str.charCodeAt(i)<<8;
+    for(let j=0;j<8;j++){
+      crc = (crc & 0x8000) ? (((crc<<1)^0x1021)&0xFFFF) : ((crc<<1)&0xFFFF);
+    }
+  }
+  return crc.toString(16).toUpperCase().padStart(4,'0');
+}
+
+function validCRC(payload){
+  const items=parseTLV(payload);
+  const crcItem=items.find(x=>x.tag==='63');
+  if(!crcItem||crcItem.val.length!==4) return null;
+  const idx=payload.lastIndexOf('6304'+crcItem.val);
+  const base=payload.slice(0,idx)+'6304';
+  return crc16ccitt(base)===crcItem.val.toUpperCase();
+}
+
+let lastStatic='';
+
+function showMsg(text,type){
+  const m=document.getElementById('msg');
+  m.textContent=text;
+  m.className='msg '+(type==='ok'?'ok':'err');
+}
+
+function parseCurrent(){
+  const raw=document.getElementById('static').value.trim();
+  lastStatic=raw;
+  document.getElementById('resultCard').style.display='none';
+  if(!raw){showMsg('Masukkan payload QRIS terlebih dahulu.','err');return null;}
+  try{
+    const items=parseTLV(raw);
+    if(!items.some(x=>x.tag==='01')) throw new Error('Tag 01 (metode inisiasi) tidak ditemukan.');
+    const tbody=document.querySelector('#tlvTable tbody');
+    tbody.innerHTML='';
+    items.forEach(x=>{
+      const tr=document.createElement('tr');
+      tr.innerHTML=`<td class="tag">${x.tag}</td><td>${x.len}</td><td style="word-break:break-all">${x.val||'<i>(kosong)</i>'}</td><td>${TAG_INFO[x.tag]||'-'}</td>`;
+      tbody.appendChild(tr);
+    });
+    document.getElementById('tlvTable').style.display='table';
+    const ok=validCRC(raw);
+    showMsg(ok===true?'Payload valid, CRC cocok.':(ok===false?'CRC tidak cocok — payload mungkin sudah diubah.':'Tag CRC (63) tidak ditemukan.'),ok?'ok':'err');
+    return items;
+  }catch(e){showMsg(e.message,'err');return null;}
+}
+
+function toDynamic(payload,baseAmount,code){
+  if(!/^\d+$/.test(baseAmount)) throw new Error('Nominal dasar harus bilangan bulat (Rp), mis. 25000.');
+  const rupiah=parseInt(baseAmount,10);
+  if(rupiah<=0) throw new Error('Nominal dasar harus lebih dari 0.');
+  if(!/^\d{1,3}$/.test(code)) throw new Error('Kode unik harus 1–3 digit angka.');
+  const uniq=parseInt(code,10);
+  const total=rupiah+uniq;
+
+  let items=parseTLV(payload).filter(x=>!['01','54','63'].includes(x.tag));
+  const pfi=items.findIndex(x=>x.tag==='00'); // tag 00 tetap paling depan
+  if(pfi!==-1) items.splice(pfi+1,0,{tag:'01',len:2,val:'12'});
+  else items.unshift({tag:'01',len:2,val:'12'});
+
+  const amountItem={tag:'54',len:0,val:String(total)};
+  const after=['53','52']; // sisipkan setelah currency / MCC bila ada
+  let idx=-1;
+  for(const t of after){
+    const found=items.findIndex(x=>x.tag===t);
+    if(found!==-1){idx=found+1;break;}
+  }
+  if(idx===-1){
+    const before=['58','59','60','61','62'].map(t=>items.findIndex(x=>x.tag===t)).find(i=>i!==-1);
+    idx=before!==undefined?before:items.length;
+  }
+  items.splice(idx,0,amountItem);
+
+  const payloadBase=buildTLV(items)+'6304';
+  return {payload:payloadBase+crc16ccitt(payloadBase), total};
+}
+
+function acakKode(){
+  document.getElementById('code').value=String(Math.floor(Math.random()*1000)).padStart(3,'0');
+}
+
+document.getElementById('btnParse').addEventListener('click',parseCurrent);
+document.getElementById('btnCode').addEventListener('click',acakKode);
+
+document.getElementById('btnConvert').addEventListener('click',()=>{
+  const items=parseCurrent();
+  if(!items) return;
+  const amount=document.getElementById('amount').value.trim();
+  const code=document.getElementById('code').value.trim();
+  try{
+    const {payload:dynamic,total}=toDynamic(lastStatic,amount,code);
+    document.getElementById('outPayload').textContent=dynamic;
+    const info=document.getElementById('totalInfo');
+    info.textContent=`Total yang harus dibayar: Rp ${total.toLocaleString('id-ID')}  (Rp ${parseInt(amount,10).toLocaleString('id-ID')} + kode ${code})`;
+    info.style.display='block';
+    const qr=document.getElementById('qr');
+    qr.innerHTML='';
+    if(typeof QRCode==='undefined') throw new Error('Library QR tidak termuat (butuh internet).');
+    new QRCode(qr,{text:dynamic,width:180,height:180,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+    document.getElementById('resultCard').style.display='block';
+    showMsg('QRIS dinamis berhasil dibuat.','ok');
+  }catch(e){showMsg(e.message,'err');}
+});
+
+// Isi QRIS merchant dari konfigurasi bila tersedia
+if(CONFIG.MERCHANT_QRIS){
+  document.getElementById('static').value=CONFIG.MERCHANT_QRIS.trim();
+  parseCurrent();
+}
+acakKode();
+document.getElementById('btnCopy').addEventListener('click',async()=>{
+  const t=document.getElementById('outPayload').textContent;
+  try{await navigator.clipboard.writeText(t);showMsg('Payload disalin.','ok');}
+  catch(e){showMsg('Gagal menyalin: '+e.message,'err');}
+});
+document.getElementById('file').addEventListener('change',e=>{
+  const f=e.target.files[0]; if(!f) return;
+  if(typeof jsQR==='undefined'){showMsg('Library pembaca QR tidak termuat (butuh internet).','err');return;}
+  const img=new Image();
+  img.onload=()=>{
+    const c=document.createElement('canvas');
+    c.width=img.width;c.height=img.height;
+    const ctx=c.getContext('2d');ctx.drawImage(img,0,0);
+    const d=ctx.getImageData(0,0,c.width,c.height);
+    const r=jsQR(d.data,c.width,c.height);
+    if(r){document.getElementById('static').value=r.data;parseCurrent();}
+    else showMsg('QR tidak terbaca pada gambar.','err');
+  };
+  img.src=URL.createObjectURL(f);
+});
+</script>
+</body>
+</html>
