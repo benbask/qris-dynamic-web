@@ -40,9 +40,9 @@
 <body>
 <div class="wrap">
   <h1>Konverter QRIS Statis → Dinamis</h1>
-  <p class="sub">Mengubah metode inisiasi (tag 01) menjadi <b>12</b>, menambahkan nominal + kode unik (tag 54), lalu menghitung ulang CRC (tag 63). <span id="merchantBadge"></span></p>
+  <p class="sub">Mengubah metode inisiasi (tag 01) menjadi <b>12</b>, menambahkan nominal (tag 54), lalu menghitung ulang CRC (tag 63).</p>
 
-  <div class="card" id="inputCard">
+  <div class="card">
     <label for="static">1. Payload QRIS statis</label>
     <textarea id="static" placeholder="Tempel string QRIS, mis. 000201010211..."></textarea>
     <div class="row" style="margin-top:10px">
@@ -59,7 +59,7 @@
   <div class="card">
     <div class="row">
       <div>
-        <label for="amount">Nominal dasar (Rp)</label>
+        <label for="amount">2. Nominal dasar (Rp)</label>
         <input type="text" id="amount" placeholder="mis. 25000" inputmode="numeric">
       </div>
       <div style="max-width:150px">
@@ -73,7 +73,7 @@
   </div>
 
   <div class="card" id="resultCard" style="display:none">
-    <h2 style="font-size:16px;margin:0 0 12px">Hasil</h2>
+    <h2 style="font-size:16px;margin:0 0 12px">3. Hasil</h2>
     <div class="out">
       <div id="qr"></div>
       <div class="payload">
@@ -97,8 +97,8 @@
    (Kosongkan jika ingin paste/upload QRIS manual setiap kali.)
    ============================================================ */
 const CONFIG = {
-  MERCHANT_QRIS: '00020101021126570011ID.DANA.WWW011893600915302429567902090242956790303UMI51440014ID.CO.QRIS.WWW0215ID10265136480590303UMI5204076353033605802ID5910Kebun Baii6015Kab. Lampung Se61053536563043F9B',
-  MERCHANT_NAME: 'Kebun Baii'
+  MERCHANT_QRIS: '',
+  MERCHANT_NAME: ''
 };
 
 const TAG_INFO = {
@@ -232,17 +232,6 @@ document.getElementById('btnConvert').addEventListener('click',()=>{
   }catch(e){showMsg(e.message,'err');}
 });
 
-// Isi QRIS merchant dari konfigurasi bila tersedia
-if(CONFIG.MERCHANT_QRIS){
-  document.getElementById('static').value=CONFIG.MERCHANT_QRIS.trim();
-  document.getElementById('inputCard').style.display='none';
-  if(CONFIG.MERCHANT_NAME){
-    const b=document.getElementById('merchantBadge');
-    b.textContent='Merchant: '+CONFIG.MERCHANT_NAME;
-    b.style.cssText='display:inline-block;background:#0f766e;color:#fff;padding:2px 8px;border-radius:999px;font-size:12px';
-  }
-  parseCurrent();
-}
 acakKode();
 document.getElementById('btnCopy').addEventListener('click',async()=>{
   const t=document.getElementById('outPayload').textContent;
