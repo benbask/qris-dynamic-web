@@ -6,6 +6,7 @@
 <title>Konverter QRIS Statis → Dinamis</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@zxing/library@0.21.3/umd/index.min.js"></script>
 <style>
   :root{--bg:#f4f6f8;--card:#fff;--ink:#1f2937;--muted:#6b7280;--line:#e5e7eb;--brand:#0f766e;--bad:#b91c1c}
   *{box-sizing:border-box}
@@ -48,6 +49,18 @@
     <div class="row" style="margin-top:10px">
       <div><span class="file">Atau unggah gambar QR:</span><br><input type="file" id="file" accept="image/*"></div>
       <div style="flex:none"><button class="btn sec" id="btnParse">Cek / Parsing</button></div>
+    </div>
+    <div id="previewWrap" style="display:none;margin-top:12px">
+      <div style="position:relative;display:inline-block;max-width:100%">
+        <canvas id="preview" style="display:block;max-width:100%;height:auto;border:1px solid var(--line);border-radius:8px;cursor:crosshair"></canvas>
+        <canvas id="overlay" style="position:absolute;left:0;top:0;max-width:100%;height:auto;cursor:crosshair;pointer-events:none"></canvas>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn sec" id="btnDecodeArea">Decode Area Terpilih</button>
+        <button class="btn sec" id="btnClearArea">Hapus Seleksi</button>
+        <button class="btn sec" id="btnDecodeFull">Decode Ulang (penuh)</button>
+      </div>
+      <div class="file" id="decodeInfo" style="margin-top:6px"></div>
     </div>
     <div class="msg" id="msg"></div>
     <table id="tlvTable" style="display:none">
@@ -238,20 +251,145 @@ document.getElementById('btnCopy').addEventListener('click',async()=>{
   try{await navigator.clipboard.writeText(t);showMsg('Payload disalin.','ok');}
   catch(e){showMsg('Gagal menyalin: '+e.message,'err');}
 });
+/* ===== Deteksi QR: native BarcodeDetector → jsQR rotasi/scale/inversi → crop manual ===== */
+const preview=document.getElementById('preview');
+const overlay=document.getElementById('overlay');
+let selection=null, dragging=false, dragStart=null;
+
+function drawSelection(){
+  const c=overlay.getContext('2d');
+  c.clearRect(0,0,overlay.width,overlay.height);
+  if(!selection) return;
+  c.fillStyle='rgba(220,38,38,.10)';
+  c.fillRect(selection.x,selection.y,selection.w,selection.h);
+  c.strokeStyle='#dc2626';
+  c.lineWidth=Math.max(2,Math.round(overlay.width/400));
+  c.setLineDash([8,5]);
+  c.strokeRect(selection.x,selection.y,selection.w,selection.h);
+}
+
+function canvasPos(e){
+  const r=preview.getBoundingClientRect();
+  return {
+    x:Math.round((e.clientX-r.left)*preview.width/r.width),
+    y:Math.round((e.clientY-r.top)*preview.height/r.height)
+  };
+}
+preview.addEventListener('pointerdown',e=>{
+  dragging=true; dragStart=canvasPos(e); selection=null; drawSelection();
+  preview.setPointerCapture(e.pointerId);
+});
+preview.addEventListener('pointermove',e=>{
+  if(!dragging||!dragStart) return;
+  const p=canvasPos(e);
+  selection={x:Math.min(dragStart.x,p.x),y:Math.min(dragStart.y,p.y),w:Math.abs(p.x-dragStart.x),h:Math.abs(p.y-dragStart.y)};
+  drawSelection();
+});
+preview.addEventListener('pointerup',()=>{dragging=false;});
+preview.addEventListener('pointercancel',()=>{dragging=false;});
+
+function transformed(src,rot,scale){
+  const swap=rot%180===90;
+  const out=document.createElement('canvas');
+  out.width=Math.round((swap?src.height:src.width)*scale);
+  out.height=Math.round((swap?src.width:src.height)*scale);
+  const c=out.getContext('2d');
+  c.imageSmoothingEnabled=false;
+  c.translate(out.width/2,out.height/2);
+  c.rotate(rot*Math.PI/180);
+  c.scale(scale,scale);
+  c.drawImage(src,-src.width/2,-src.height/2);
+  return out;
+}
+
+async function decodeCanvas(src){
+  // 1) BarcodeDetector bawaan Chrome/Edge: paling tahan terhadap logo & teks di sekitar QR
+  if('BarcodeDetector' in window){
+    try{
+      const bd=new BarcodeDetector({formats:['qr_code']});
+      const found=await bd.detect(src);
+      if(found.length&&found[0].rawValue) return {value:found[0].rawValue,via:'BarcodeDetector (native)'};
+    }catch(e){}
+  }
+  // 2) jsQR cepat: rotasi 90°, pembesaran, dan deteksi warna terbalik
+  if(typeof jsQR!=='undefined'){
+    for(const rot of [0,90,180,270]){
+      for(const scale of [1,2]){
+        const c=transformed(src,rot,scale);
+        let d;
+        try{ d=c.getContext('2d').getImageData(0,0,c.width,c.height); }catch(e){ continue; }
+        for(const inv of ['attemptBoth','dontInvert']){
+          const r=jsQR(d.data,d.width,d.height,{inversionAttempts:inv});
+          if(r&&r.data) return {value:r.data,via:`jsQR (rotasi ${rot}°, ${scale}x, ${inv})`};
+        }
+      }
+    }
+  }
+  // 3) ZXing sebagai penyelamat terakhir:TRY_HARDER + lebih banyak sudut
+  if(typeof ZXing!=='undefined'){
+    for(const rot of [0,45,90,135,180,225,270,315]){
+      try{
+        const c=transformed(src,rot,1);
+        const d=c.getContext('2d').getImageData(0,0,c.width,c.height);
+        const lum=new ZXing.RGBLuminanceSource(d.data,d.width,d.height);
+        const bin=new ZXing.BinaryBitmap(new ZXing.HybridBinarizer(lum));
+        const hints=new Map();
+        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[ZXing.BarcodeFormat.QR_CODE]);
+        hints.set(ZXing.DecodeHintType.TRY_HARDER,true);
+        const res=new ZXing.MultiFormatReader().decode(bin,hints);
+        if(res&&res.getText()) return {value:res.getText(),via:`ZXing (rotasi ${rot}°)`};
+      }catch(e){}
+    }
+  }
+  if(typeof jsQR==='undefined') throw new Error('Library pembaca QR tidak termuat (butuh internet).');
+  return null;
+}
+
+async function runDecode(src,label){
+  const info=document.getElementById('decodeInfo');
+  info.textContent='Mencoba decode '+label+'...';
+  try{
+    const r=await decodeCanvas(src);
+    if(!r){
+      info.textContent='Gagal mendecode '+label+'.';
+      showMsg('QR tidak terbaca. Geser mouse di gambar untuk memilih area QR saja, lalu klik “Decode Area Terpilih”.','err');
+      return;
+    }
+    document.getElementById('static').value=r.value;
+    info.textContent='Berhasil via '+r.via;
+    parseCurrent();
+  }catch(e){ showMsg(e.message,'err'); }
+}
+
 document.getElementById('file').addEventListener('change',e=>{
   const f=e.target.files[0]; if(!f) return;
-  if(typeof jsQR==='undefined'){showMsg('Library pembaca QR tidak termuat (butuh internet).','err');return;}
   const img=new Image();
   img.onload=()=>{
-    const c=document.createElement('canvas');
-    c.width=img.width;c.height=img.height;
-    const ctx=c.getContext('2d');ctx.drawImage(img,0,0);
-    const d=ctx.getImageData(0,0,c.width,c.height);
-    const r=jsQR(d.data,c.width,c.height);
-    if(r){document.getElementById('static').value=r.data;parseCurrent();}
-    else showMsg('QR tidak terbaca pada gambar.','err');
+    const maxDim=1600;
+    const ratio=Math.min(1,maxDim/Math.max(img.width,img.height));
+    preview.width=Math.round(img.width*ratio);
+    preview.height=Math.round(img.height*ratio);
+    overlay.width=preview.width; overlay.height=preview.height;
+    preview.getContext('2d').drawImage(img,0,0,preview.width,preview.height);
+    selection=null; drawSelection();
+    document.getElementById('previewWrap').style.display='block';
+    runDecode(preview,'gambar penuh');
   };
   img.src=URL.createObjectURL(f);
+});
+
+document.getElementById('btnDecodeFull').addEventListener('click',()=>runDecode(preview,'gambar penuh'));
+document.getElementById('btnClearArea').addEventListener('click',()=>{selection=null;drawSelection();});
+document.getElementById('btnDecodeArea').addEventListener('click',()=>{
+  if(!selection||selection.w<10||selection.h<10){showMsg('Pilih area QR dulu dengan menggeser mouse di gambar.','err');return;}
+  const pad=Math.round(Math.max(selection.w,selection.h)*0.06);
+  const x=Math.max(0,selection.x-pad), y=Math.max(0,selection.y-pad);
+  const w=Math.min(preview.width-x,selection.w+pad*2);
+  const h=Math.min(preview.height-y,selection.h+pad*2);
+  const c=document.createElement('canvas');
+  c.width=w; c.height=h;
+  c.getContext('2d').drawImage(preview,x,y,w,h,0,0,w,h);
+  runDecode(c,'area terpilih');
 });
 </script>
 </body>
