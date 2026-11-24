@@ -189,11 +189,16 @@ function parseCurrent(){
 }
 
 function toDynamic(payload,baseAmount,code){
-  if(!/^\d+$/.test(baseAmount)) throw new Error('Nominal dasar harus bilangan bulat (Rp), mis. 25000.');
-  const rupiah=parseInt(baseAmount,10);
+  // Terima berbagai format: 25000, 25.000, 25,000, "Rp 25.000"
+  let angka=String(baseAmount||'').trim().replace(/[^\d.,]/g,'');
+  angka=angka.replace(/[.,]\d{1,2}$/,'').replace(/\D/g,''); // buang desimal "25000.00"
+  if(!angka) throw new Error('Nominal dasar belum diisi.');
+  const rupiah=parseInt(angka,10);
   if(rupiah<=0) throw new Error('Nominal dasar harus lebih dari 0.');
-  if(!/^\d{1,3}$/.test(code)) throw new Error('Kode unik harus 1–3 digit angka.');
-  const uniq=parseInt(code,10);
+  const kodeDigit=String(code||'').replace(/\D/g,'').slice(-3);
+  if(!kodeDigit) throw new Error('Kode unik belum diisi — klik tombol Acak.');
+  const codeStr=kodeDigit.padStart(3,'0');
+  const uniq=parseInt(codeStr,10);
   const total=rupiah+uniq;
 
   let items=parseTLV(payload).filter(x=>!['01','54','63'].includes(x.tag));
@@ -215,7 +220,7 @@ function toDynamic(payload,baseAmount,code){
   items.splice(idx,0,amountItem);
 
   const payloadBase=buildTLV(items)+'6304';
-  return {payload:payloadBase+crc16ccitt(payloadBase), total};
+  return {payload:payloadBase+crc16ccitt(payloadBase), total, rupiah, code:codeStr};
 }
 
 function acakKode(){
@@ -229,19 +234,26 @@ document.getElementById('btnConvert').addEventListener('click',()=>{
   const items=parseCurrent();
   if(!items) return;
   const amount=document.getElementById('amount').value.trim();
-  const code=document.getElementById('code').value.trim();
+  let code=document.getElementById('code').value.trim();
+  if(!code){code=String(Math.floor(Math.random()*1000)).padStart(3,'0');document.getElementById('code').value=code;}
   try{
-    const {payload:dynamic,total}=toDynamic(lastStatic,amount,code);
+    const {payload:dynamic,total,rupiah,code:codeStr}=toDynamic(lastStatic,amount,code);
     document.getElementById('outPayload').textContent=dynamic;
     const info=document.getElementById('totalInfo');
-    info.textContent=`Total yang harus dibayar: Rp ${total.toLocaleString('id-ID')}  (Rp ${parseInt(amount,10).toLocaleString('id-ID')} + kode ${code})`;
+    info.textContent=`Total yang harus dibayar: Rp ${total.toLocaleString('id-ID')}  (Rp ${rupiah.toLocaleString('id-ID')} + kode ${codeStr})`;
     info.style.display='block';
     const qr=document.getElementById('qr');
     qr.innerHTML='';
-    if(typeof QRCode==='undefined') throw new Error('Library QR tidak termuat (butuh internet).');
-    new QRCode(qr,{text:dynamic,width:180,height:180,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+    let qrError=false;
+    try{
+      if(typeof QRCode==='undefined') throw new Error('library QR tidak termuat');
+      new QRCode(qr,{text:dynamic,width:180,height:180,colorDark:'#000000',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
+    }catch(e){
+      qrError=true;
+      qr.innerHTML='<span class="file">QR tidak bisa dirender ('+e.message+'), tapi payload tetap bisa disalin.</span>';
+    }
     document.getElementById('resultCard').style.display='block';
-    showMsg('QRIS dinamis berhasil dibuat.','ok');
+    showMsg(qrError?'Payload berhasil dibuat, tapi QR tidak dirender — cek koneksi internet.':'QRIS dinamis berhasil dibuat.',qrError?'err':'ok');
   }catch(e){showMsg(e.message,'err');}
 });
 
