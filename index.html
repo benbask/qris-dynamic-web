@@ -36,6 +36,10 @@
   td.tag{font-family:monospace;width:70px}
   .note{font-size:12px;color:var(--muted);line-height:1.6}
   .file{font-size:13px;color:var(--muted)}
+  .credit{margin-top:18px;padding-top:14px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);line-height:1.8;text-align:center}
+  .credit a{color:var(--brand);text-decoration:none;font-weight:600}
+  .credit a:hover{text-decoration:underline}
+  .credit .ethic{margin-top:6px;font-style:italic}
 </style>
 </head>
 <body>
@@ -101,6 +105,12 @@
     Catatan: CRC dihitung dengan CRC-16/CCITT-FALSE (poly 0x1021, init 0xFFFF) sesuai spesifikasi QRIS.<br>
     Payload yang dihasilkan tetap harus diproses oleh acquirer/merchant. Tidak semua penerima QRIS menerima QR dinamis buatan pihak ketiga — pastikan sistem kasir/merchant Anda mendukungnya. Alat ini hanya memformat data, bukan menjamin transaksi berhasil.
   </p>
+
+  <div class="credit">
+    <div>Dibuat oleh <strong>Beny Abu Ibrahim</strong> · <a href="https://github.com/benbask" target="_blank" rel="noopener">@benbask</a></div>
+    <div>Open source: <a href="https://github.com/benbask/qris-dynamic-web" target="_blank" rel="noopener">github.com/benbask/qris-dynamic-web</a></div>
+    <div class="ethic">Silakan <strong>fork</strong>, pakai, dan kembangkan. Junjung tinggi etika open source: sertakan atribusi, jangan klaim sebagai karya sendiri, dan kontribusikan perbaikan kembali ke repository.</div>
+  </div>
 </div>
 
 <script>

@@ -31,6 +31,22 @@ const CONFIG = {
 };
 ```
 
+## Credits & Open Source
+
+Dibuat oleh **Beny Abu Ibrahim** ([@benbask](https://github.com/benbask)).
+
+Repository open source: **https://github.com/benbask/qris-dynamic-web**
+
+Silakan **fork**, pakai, dan kembangkan proyek ini. Junjung tinggi etika open source:
+
+- Sertakan atribusi kepada penulis asli saat menggunakan atau memodifikasi kode.
+- Jangan klaim karya ini sebagai hasil sendiri.
+- Jangan menghapus atau menyembunyikan bagian credit.
+- Kontribusikan perbaikan dan fitur baru kembali ke repository melalui pull request.
+- Gunakan secara bertanggung jawab dan patuhi regulasi pembayaran yang berlaku.
+
+Lisensi: [MIT](LICENSE).
+
 ## Catatan
-- Library QR (qrcode.js) dan pembaca QR (jsQR) dimuat dari CDN, jadi memerlukan internet.
+- Library QR (qrcode.js), pembaca QR (jsQR), dan ZXing dimuat dari CDN, jadi memerlukan internet.
 - Alat ini hanya memformat payload sesuai spesifikasi QRIS. Penerimaan QR dinamis tetap bergantung pada acquirer / sistem kasir merchant. Uji dulu sebelum produksi.
